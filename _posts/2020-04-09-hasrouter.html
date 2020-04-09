@@ -1,0 +1,109 @@
+---
+layout: post
+title: "React HashRouter: how to avoid headaches"
+subtitle: "BrowserRouter ain't what you need (for simple client side rendered SPAs)."
+date: 2020-04-09 01:45:13 -0400
+background: '/img/posts/02.jpg'
+---
+
+<p>If you are anything like me, after playing around with React an rendering components here and there you probably
+    started
+    wondering how someone would go about loading a component conditionally.
+    Soon you realized that you can conditionally render your components using your everyday if, switch, ternary operator
+    and what
+    not.
+    All is good for a while but then it falls into you <q>oh man, wouldn't it be great to load components base on the
+        URL</q>🤔
+</p>
+
+<h2 class="section-heading">Enter the Browser Router</h2>
+<p>After googling for a few seconds you found about BrowserRouter. You go through the tutorials and it seems simple enough, you
+    end up with something similar to this:</p>
+{% highlight jsx  linenos %}
+import React from 'react';
+import './App.css';
+import {BrowserRouter as Router, Switch, Route} from 'react-router-dom';
+
+function App() {
+return (
+<Router basename="/tutorial">
+    <NavbarComponent></NavbarComponent>
+    <Switch>
+        <Route path={`/users`}>
+            <UsersComponent>
+                </UserComponent>
+        </Route>
+        <Route path={`/posts`}>
+            <PostsComponent></PostsComponent>
+        </Route>
+    </Switch>
+</Router>
+);
+}
+
+export default App;
+{% endhighlight %}
+<p>Somewhere else in your app:</p>
+{% highlight jsx  linenos %}
+<a href="/posts">View Posts</a>
+{% endhighlight %}
+
+<p>You have your Router that can switch between routes and you have links with relative path to navigate around.
+    You run <code>npm start</code>(or <code>yarn start</code>
+    🐱)</code>, the dev server fires up, you try your links and they work like a charm.</p>
+
+<h2 class="section-heading">Until they don't</h2>
+<p>You have been coding your React app for while and you already have a bunch of features working, so you start working
+    on the deployment.
+    It seems simple enough, for instance, if you used Create-react-app you just run <code>npm run build</code>, which
+    generates a /build folder with your compiled site.
+    Then you copy the content to your server (apache, nginx, IIS), you browse to your newly deployed app, which loads
+    without any issues, as you are about to celebrate, you try one of your navigation links and you are met by a
+    beautiful: </p>
+<h4>"Error: 404 not found"</h4>
+<p>What they didn't tell you on those BrowserRouter tutorials (though to be fair is rather obvious when you think about
+    it) is that each time you click on one of your links the web browser will go to the server and ask for the
+    corresponding route, for example <code>http://example.com/posts</code>, since there is nothing there on the server
+    it will of course return 404. Why did it work on the React dev server? Simple, the dev server is defaulting any
+    unknown route to /index.html, thus it doesn't matter where your links point to, it will always return /index.html,
+    then locally on the web browser the BrowserRouter component kicks in, checks on the URL and does its trick.</p>
+
+<h2>The solution: enter HashRouter</h2>
+<p>If you look around on google for a solution you will probably find suggestions about configuring your HTTP Server to
+    do what the dev server does, that is to redirect all the requests to /index.html. That works, but why do you
+    need to go to
+    the server to load a component when your SPA is already fully loaded on the browser? The answer is you don't, what
+    you really need is HashRouter.</p>
+<p>The HashRouter component is included on React Router ready to be used and you barely need to change your code to use
+    it. Basically you need to import HashRouter instead of BrowserRouter and prepend your links with # instead of /</p>
+{% highlight jsx  linenos %}
+import React from 'react';
+import './App.css';
+import {HashRouter as Router, Switch, Route} from 'react-router-dom';
+
+function App() {
+return (
+<Router basename="/tutorial">
+    <NavbarComponent></NavbarComponent>
+    <Switch>
+        <Route path={`/users`}>
+            <UsersComponent>
+                </UserComponent>
+        </Route>
+        <Route path={`/posts`}>
+            <PostsComponent></PostsComponent>
+        </Route>
+    </Switch>
+</Router>
+);
+}
+
+export default App;
+{% endhighlight %}
+<p>Somewhere else in your app:</p>
+{% highlight jsx  linenos %}
+<a href="#posts">View Posts</a>
+{% endhighlight %}
+<p>HashRouter uses fragment links (<a href="https://en.wikipedia.org/wiki/Fragment_identifier">Wikipedia</a>), this
+    type of links by definition will not trigger an HTTP request on the browser, this way you can support navigation
+    while keeping everything locally, and without any special setup on the server. </p>

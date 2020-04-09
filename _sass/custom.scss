@@ -1,0 +1,9 @@
+q {
+    font-style: italic;
+    color: #e6563c;
+    @include sans-serif-font;
+}
+
+body {
+    font-family: Arial, Helvetica, sans-serif;
+}
