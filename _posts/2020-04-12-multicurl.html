@@ -2,7 +2,7 @@
 layout: post
 title: "Sewing without threads: PHP Multi cURL"
 subtitle: "Non-blocking HTTP requests without multithreading"
-date: 2020-04-09 01:45:13 -0400
+date: 2020-04-12 01:45:13 -0400
 background: '/img/posts/03.jpg'
 ---
 
@@ -197,7 +197,7 @@ while($active);
 {% endhighlight %}
 <span class="caption text-muted">Warning! Do not try at home!.</span>
 
-<p>That code will act like an infinite empty loop until all the calls are finish,
+<p>That code will act like an infinite empty loop until all the calls are finished,
     making the CPU usage go to 100% doing nothing, and that is not good, so even though the code might look simpler
      you shouldn't use that approach. 
 </p>
