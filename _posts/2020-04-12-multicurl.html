@@ -1,0 +1,203 @@
+---
+layout: post
+title: "Sewing without threads: PHP Multi cURL"
+subtitle: "Non-blocking HTTP requests without multithreading"
+date: 2020-04-09 01:45:13 -0400
+background: '/img/posts/03.jpg'
+---
+
+<p>
+    Let's suppose that you have to write a script to download information through HTTP requests.
+    Let's also suppose that for whatever reason you have to write it on PHP. (Maybe because is cheap to host, or you are
+    working with some legacy code, or maybe you like it, I won't judge).
+    Let's also suppose that you have to send several HTTP requests on each run of your script.
+    Let's finally suppose that you cannot relay on third party implementations like <a
+        href="http://docs.guzzlephp.org/en/stable/">Guzzle</a> (if you can, by all means do).
+    <script class=""></script> With all those suppositions in place you are basically stuck with cURL.
+    I say stuck because, even though it has a great performance and it has past the test of time, its interface
+    is really nasty.
+</p>
+<h2>The naïve approach</h2>
+<p>Just in case you haven't use cURL, let's see how it works. Performing a
+    HTTP requests is rather simple, you just need a few functions:
+    <ul>
+        <li><code>curl_init</code> to create the handle.</li>
+        <li><code>curl_setopt</code> to set parameters for the call.</li>
+        <li><code>curl_exec</code> to actually fire the request.</li>
+        <li><code>curl_close</code> to release the handle.</li>
+    </ul>
+</p>
+
+{% highlight php linenos %}
+<?php
+    /* create curl handle */
+    $handle = curl_init();
+
+    /* set the endpoint to query */
+    curl_setopt($handle, CURLOPT_URL, "example.com");
+
+    /* tell cURL that you want the response of the request as a string */
+    curl_setopt($handle, CURLOPT_RETURNTRANSFER, TRUE);
+
+    /* get the content of the response */
+    $output = curl_exec($handle);
+
+    /* free the resources */
+    curl_close($handle);  
+{% endhighlight %}
+
+
+<p>Nice, we have our request, of course you might need to setup some request headers and what not for
+    the endpoint you are going to use, but that is beside the point.</p>
+<p>As we said we need to perform requests to several endpoints, so let's do that:</p>
+{% highlight php linenos %}
+<?php
+    $endpoints=array(
+        "http://example.com/_things",
+        "http://example.com/nice_things",
+        "http://example.com/more_things",
+        "http://example.com/extra_things",
+        "http://example.com/free_things",
+        "http://example.com/paid_things",
+    );
+    $outputs=[];
+    /* We only create 1 handle and reuse it. */
+    /* This improves performance, IF and only if we are quering the same endpoint each time. */
+    $handle = curl_init();
+    foreach($endpoints as $endpoint){
+
+        /* Set the endpoint to query */
+        curl_setopt($handle, CURLOPT_URL, $endpoint);
+
+        /* Tell cURL that you want the response of the request as a string */
+        curl_setopt($handle, CURLOPT_RETURNTRANSFER, TRUE);
+
+        /* Get the content of the response */
+        $outputs[] = curl_exec($handle);
+}
+
+/* free the resources */
+curl_close($handle);  
+{% endhighlight %}
+
+ <p>Simple enough, it should work fine, we run the script to test it and... 
+     it takes forever, or at least more than  we expected.
+That is happening because <code>curl_exec</code> is a blocking function, 
+so basically we are waiting for each request to succeed before firing the next one.
+With this approach we are wasting time, in most cases the hardware on both ends should be able to 
+handle many request at the same time, so it would be great to have a way to do so.</p>
+
+<h2>Multi cURL: uglier and faster</h2>
+<p>The cURL standard library comes with multi-request capabilities built in.
+    To use it we have to introduce a few extra functions:
+    <ul>
+        <li><code>curl_multi_init</code> to create a group of handles.</li>
+        <li><code>curl_multi_add_handle</code> to add handle to the group.</li>
+        <li><code>curl_multi_exec</code> process the pending action on the query.</li>       
+        <li><code>curl_multi_select</code> to wait for activities on any handle.</li>
+        <li><code>curl_multi_getcontent</code> to get the result of a handle.</li>
+        <li><code>curl_multi_close</code> to to release the resources of the group.</li>
+    </ul>
+</p>
+<p>Let's see them in action:</p>
+
+{% highlight php linenos %}
+<?php
+$endpoints=array(
+    "http://example.com/_things",
+    "http://example.com/nice_things",
+    "http://example.com/more_things",
+    "http://example.com/extra_things",
+    "http://example.com/free_things",
+    "http://example.com/paid_things",
+);
+
+$outputs = [];
+$handles = [];
+
+/* Create the group handle. */
+$curl_multi = curl_multi_init();
+
+/* Similar to the previous example but we do not call curl_exec. */
+foreach ($endpoints as $endpoint) {
+ echo "Creating for $endpoint\n";
+
+ /* Create the handle for the endpoint. */
+ $handle = curl_init();
+
+ /* set the endpoint to query. */
+ curl_setopt($handle, CURLOPT_URL, $endpoint);
+
+ /* tell cURL that you want the response of the request as a string. */
+ curl_setopt($handle, CURLOPT_RETURNTRANSFER, TRUE);
+
+ curl_multi_add_handle($curl_multi, $handle);
+
+ /* Save each reference, we need it later. */
+ $handles[] = $handle;
+}
+
+/* While we're still active, execute curl. */
+$active = null;
+do {
+ $mrc = curl_multi_exec($curl_multi, $active);
+
+ /* CURLM_CALL_MULTI_PERFORM means "keep calling curl_multi_exec" so we do. */
+} while ($mrc == CURLM_CALL_MULTI_PERFORM);
+
+while ($active && $mrc == CURLM_OK) {
+
+ /* Wait for activity on any of the connections. */
+ if (curl_multi_select($curl_multi) == -1) {
+
+  /* If there is no activity skip the loop. */
+  continue;
+ }
+
+ /* If we got here there was activity on some connections so do the multi_exec. */
+ do {
+  $mrc = curl_multi_exec($curl_multi, $active);
+ } while ($mrc == CURLM_CALL_MULTI_PERFORM);
+}
+
+foreach ($handles as $han) {
+
+ /* Get the result from the handle. */
+ $results[] = curl_multi_getcontent($han);
+
+ /* Remove the handle from the group. */
+ curl_multi_remove_handle($curl_multi, $han);
+
+ /* Close the handle. */
+ curl_close($han);
+}
+
+/* Close the group handle. */
+curl_multi_close($curl_multi);
+
+{% endhighlight %}
+
+<p>That is a lot to swallow, trust me I know, but that is how it's done. 
+You might be wondering what is about all those <code>while</code> loops there.
+The outer loop <code>while ($active && $mrc == CURLM_OK)</code> is basically saying
+"while there are pending request to process" and 
+<code> while ($mrc == CURLM_CALL_MULTI_PERFORM)</code> means "while there is data on the buffer to send or receive".
+Something very important to notice is the check <code>if (curl_multi_select($curl_multi) == -1)</code>
+which is telling the program to wait if there is really nothing to do. The function
+<code>curl_multi_select</code> blocks the program until 
+there is something to be done on any of the connections. This is good because it frees up the CPU until it is really needed.
+</p>
+<p>Googling around you might find implementations where they don't use <code>curl_multi_select</code>, they do something like this:<p>
+
+{% highlight php linenos %}
+do {
+    curl_multi_exec($mh, $active);
+}
+while($active);
+{% endhighlight %}
+<span class="caption text-muted">Warning! Do not try at home!.</span>
+
+<p>That code will act like an infinite empty loop until all the calls are finish,
+    making the CPU usage go to 100% doing nothing, and that is not good, so even though the code might look simpler
+     you shouldn't use that approach. 
+</p>
